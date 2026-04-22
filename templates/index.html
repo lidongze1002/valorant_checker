@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>瓦罗兰特亚服数据查询</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #1a1e28;
+            /* 修正背景图引用方式 */
+            background-image: linear-gradient(rgba(26, 30, 40, 0.8), rgba(26, 30, 40, 0.95)), url('/static/bg.jpg');
+            background-attachment: fixed;
+            background-size: cover;
+            background-position: center;
+            color: #ece8e1;
+            min-height: 100vh;
+        }
+
+        .val-font { font-family: 'Oswald', sans-serif; }
+        .glass { background: rgba(30, 35, 45, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
+
+        .list-row { transition: 0.2s; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; }
+        .list-row:hover { background: rgba(255,255,255,0.05); }
+        .result-badge { writing-mode: horizontal-tb; text-align: center; border-radius: 4px; padding: 2px 6px; font-weight: 900; }
+        .badge-win { background-color: #059669; color: white; }
+        .badge-loss { background-color: #e11d48; color: white; }
+        .badge-draw { background-color: #4b5563; color: white; }
+
+        #detailModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; backdrop-filter: blur(10px); }
+        .player-link:hover { color: #ff4655; text-decoration: underline; cursor: pointer; }
+    </style>
+</head>
+<body class="p-4 md:p-6 max-w-5xl mx-auto">
+
+    <!-- 顶部通用搜索栏 -->
+    <div class="flex gap-2 items-center mb-6">
+        <h1 class="val-font text-2xl text-[#ff4655] italic uppercase whitespace-nowrap hidden md:block mr-4">Valorant Data</h1>
+        <div class="flex-1 bg-[#2a2e38] rounded-xl flex items-center p-1 border border-transparent focus-within:border-[#ff4655] transition">
+            <input id="nav_name" type="text" placeholder="输入游戏昵称" class="bg-transparent p-3 w-full outline-none font-bold">
+            <span class="text-gray-500 font-bold px-2">#</span>
+            <input id="nav_tag" type="text" placeholder="TAG" class="bg-transparent p-3 w-24 outline-none font-bold text-center">
+            <button onclick="searchPlayer()" class="bg-[#ff4655] px-6 py-2 m-1 rounded-lg font-black text-white hover:bg-white hover:text-black transition">查询</button>
+        </div>
+    </div>
+
+    <!-- 加载中提示 -->
+    <div id="loading-state" class="hidden text-center py-20 animate-pulse">
+        <p class="text-2xl val-font text-[#ff4655] italic mb-2">INTEGRATING DATA...</p>
+        <p class="text-sm text-gray-400 tracking-widest">正在解析亚服战绩...</p>
+    </div>
+
+    <!-- 初始首页大标题 -->
+    <div id="hero-search" class="mt-40 text-center">
+        <h1 class="val-font text-6xl italic uppercase mb-4 tracking-tighter">瓦罗兰特<span class="text-[#ff4655]">战绩查询</span></h1>
+        <p class="text-gray-400 text-lg mb-10">在上方输入框键入 Riot ID 开始分析近期表现</p>
+    </div>
+
+    <!-- 内容展示区 (略，同上一版，只需确保逻辑一致) -->
+    <!-- ... 这里保持你之前的 content 结构 ... -->
+    <div id="content" class="hidden space-y-6">
+        <!-- 玩家名片区 -->
+        <div class="glass rounded-3xl p-6 flex items-center gap-6">
+            <div class="relative">
+                <img id="avatar" src="" class="w-24 h-24 rounded-2xl border-2 border-gray-600 object-cover">
+                <img id="rank_img" src="" class="absolute -bottom-3 -right-3 w-12 h-12 drop-shadow-xl" onerror="this.style.display='none'">
+            </div>
+            <div>
+                <h2 id="display_name" class="text-3xl font-black"></h2>
+                <div class="flex gap-3 mt-2 text-sm font-bold">
+                    <span id="rank_label" class="bg-gray-800 px-3 py-1 rounded text-[#ff4655]"></span>
+                    <span class="bg-gray-800 px-3 py-1 rounded text-gray-300">等级 <span id="acc_level"></span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 核心统计 -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="glass p-4 rounded-2xl flex flex-col items-center justify-center text-center"><p class="text-xs text-gray-400 font-bold mb-1">近期胜率</p><p id="stat_wr" class="text-2xl val-font text-green-400">0%</p></div>
+            <div class="glass p-4 rounded-2xl flex flex-col items-center justify-center text-center"><p class="text-xs text-gray-400 font-bold mb-1">场均伤害 ADR</p><p id="stat_adr" class="text-2xl val-font text-white">0</p></div>
+            <div class="glass p-4 rounded-2xl flex flex-col items-center justify-center text-center"><p class="text-xs text-gray-400 font-bold mb-1">K/D</p><p id="stat_kd" class="text-2xl val-font text-white">0</p></div>
+            <div class="glass p-4 rounded-2xl flex flex-col items-center justify-center text-center"><p class="text-xs text-gray-400 font-bold mb-1">平均战斗分</p><p id="stat_acs" class="text-2xl val-font text-yellow-500">0</p></div>
+            <div class="glass p-4 rounded-2xl flex flex-col items-center justify-center text-center"><p class="text-xs text-gray-400 font-bold mb-1">爆头率</p><p id="stat_hs" class="text-2xl val-font text-[#ff4655]">0%</p></div>
+        </div>
+
+        <div class="glass p-6 rounded-3xl">
+            <h3 class="font-bold text-sm text-gray-400 mb-4 flex justify-between"><span>竞技走势 (ACS)</span></h3>
+            <canvas id="acsChart" height="80"></canvas>
+        </div>
+
+        <div class="glass rounded-3xl overflow-hidden">
+            <div class="bg-gray-800 bg-opacity-50 p-4 font-bold text-sm text-gray-300 border-b border-gray-700">比赛战绩</div>
+            <div id="match_list" class="flex flex-col"></div>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 (略) -->
+    <div id="detailModal" class="flex items-center justify-center p-2 md:p-6">
+        <div class="bg-[#1e232d] w-full max-w-5xl rounded-2xl overflow-hidden flex flex-col max-h-[90vh] shadow-2xl border border-gray-700">
+            <div class="p-5 border-b border-gray-700 flex justify-between items-center bg-[#2a2e38]">
+                <div><h2 class="font-black text-xl" id="m_title">对局详情</h2><p class="text-xs text-gray-400 mt-1" id="m_meta"></p></div>
+                <button onclick="closeModal()" class="text-3xl text-gray-500 hover:text-white">&times;</button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <div class="border border-red-900 rounded-xl overflow-hidden">
+                    <div class="bg-red-500 bg-opacity-20 p-2 px-4 font-bold text-red-300 text-sm flex justify-between"><span>红队</span><span id="score_red"></span></div>
+                    <table class="w-full text-xs text-left"><tbody id="red_body"></tbody></table>
+                </div>
+                <div class="border border-green-900 rounded-xl overflow-hidden">
+                    <div class="bg-green-500 bg-opacity-20 p-2 px-4 font-bold text-green-300 text-sm flex justify-between"><span>蓝队</span><span id="score_blue"></span></div>
+                    <table class="w-full text-xs text-left"><tbody id="blue_body"></tbody></table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let charts = {};
+        let matches = [];
+
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const qName = urlParams.get('name');
+            const qTag = urlParams.get('tag');
+            if (qName && qTag) {
+                document.getElementById('nav_name').value = qName;
+                document.getElementById('nav_tag').value = qTag;
+                fetchData(qName, qTag);
+            }
+        };
+
+        function searchPlayer() {
+            const n = document.getElementById('nav_name').value;
+            const t = document.getElementById('nav_tag').value;
+            if (n && t) window.location.href = `/?name=${encodeURIComponent(n)}&tag=${encodeURIComponent(t)}`;
+        }
+
+        async function fetchData(name, tag) {
+            document.getElementById('hero-search').style.display = 'none';
+            document.getElementById('content').style.display = 'none';
+            document.getElementById('loading-state').style.display = 'block';
+            try {
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name, tag, region: 'ap'})
+                });
+                const result = await res.json();
+                document.getElementById('loading-state').style.display = 'none';
+                if(result.status === 'success') {
+                    matches = result.data.history;
+                    renderData(result.data, name, tag);
+                } else {
+                    alert("查询失败：请求过于频繁或该玩家隐藏了战绩。");
+                    document.getElementById('hero-search').style.display = 'block';
+                }
+            } catch (e) { alert("网络连接错误"); }
+        }
+
+        function timeAgo(unixStamp) {
+            const diff = Math.floor(Date.now() / 1000) - unixStamp;
+            if (diff < 3600) return Math.floor(diff/60) + "分钟前";
+            if (diff < 86400) return Math.floor(diff/3600) + "小时前";
+            return Math.floor(diff/86400) + "天前";
+        }
+
+        function renderData(d, name, tag) {
+            document.getElementById('content').style.display = 'block';
+            document.getElementById('display_name').innerText = `${name} #${tag}`;
+            // 增加图片 null 检查
+            if(d.profile.avatar) document.getElementById('avatar').src = d.profile.avatar;
+            if(d.profile.rank_img) {
+                document.getElementById('rank_img').src = d.profile.rank_img;
+                document.getElementById('rank_img').style.display = 'block';
+            } else {
+                document.getElementById('rank_img').style.display = 'none';
+            }
+            document.getElementById('rank_label').innerText = d.profile.rank_label;
+            document.getElementById('acc_level').innerText = d.profile.level;
+
+            document.getElementById('stat_wr').innerText = d.stats.wr;
+            document.getElementById('stat_acs').innerText = d.stats.acs;
+            document.getElementById('stat_adr').innerText = d.stats.adr;
+            document.getElementById('stat_kd').innerText = d.stats.kd;
+            document.getElementById('stat_hs').innerText = d.stats.hs;
+
+            const list = document.getElementById('match_list');
+            list.innerHTML = matches.map((m, idx) => {
+                let badgeClass = 'badge-draw';
+                if(m.result === '胜利') badgeClass = 'badge-win';
+                if(m.result === '失败') badgeClass = 'badge-loss';
+                return `
+                <div class="list-row flex items-center p-3 px-4 md:px-6" onclick="openDetail(${idx})">
+                    <div class="w-16 flex flex-col items-start gap-1">
+                        <span class="result-badge ${badgeClass}">${m.result}</span>
+                        <span class="text-[10px] text-gray-500">${timeAgo(m.timestamp)}</span>
+                    </div>
+                    <div class="flex-1 flex items-center gap-3">
+                        <div class="relative">
+                            <img src="${m.agent_img}" class="w-10 h-10 md:w-12 md:h-12 rounded bg-gray-800 object-cover">
+                            ${m.is_mvp ? '<span class="absolute -bottom-1 -right-1 bg-yellow-500 text-black text-[8px] font-black px-1 rounded">MVP</span>' : ''}
+                        </div>
+                        <div>
+                            <p class="font-bold text-sm">${m.agent}</p>
+                            <p class="text-[10px] text-gray-400 bg-gray-800 px-1 rounded inline-block mt-1">${m.mode}</p>
+                            <span class="text-[10px] text-gray-500 ml-1">${m.map}</span>
+                        </div>
+                    </div>
+                    <div class="w-20 md:w-24 text-center val-font text-xl md:text-2xl font-bold ${m.result === '胜利' ? 'text-green-400' : 'text-gray-300'}">${m.score}</div>
+                    <div class="hidden md:block w-24 text-center">
+                        <p class="text-sm font-bold">${m.kd_ratio}</p>
+                        <p class="text-[10px] text-gray-500 font-mono tracking-widest">${m.kda}</p>
+                    </div>
+                    <div class="w-16 md:w-24 text-right"><span class="font-black text-lg md:text-xl val-font">${m.acs}</span></div>
+                </div>`;
+            }).join('');
+            createChart('acsChart', d.charts.labels, d.charts.acs, '#ff4655');
+        }
+
+        function createChart(id, labels, data, color) {
+            if(charts[id]) charts[id].destroy();
+            const ctx = document.getElementById(id).getContext('2d');
+            charts[id] = new Chart(ctx, {
+                type: 'line',
+                data: { labels: labels, datasets:[{ data: data, borderColor: color, backgroundColor: color+'22', fill: true, tension: 0.4 }] },
+                options: { plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { grid: { color: 'rgba(255,255,255,0.05)' } } } }
+            });
+        }
+
+        function openDetail(idx) {
+            const m = matches[idx];
+            document.getElementById('m_title').innerText = `${m.mode} - ${m.map}`;
+            document.getElementById('m_meta').innerText = `${timeAgo(m.timestamp)} | 总比分: ${m.score}`;
+            document.getElementById('score_red').innerText = m.score.split(':')[0] || '';
+            document.getElementById('score_blue').innerText = m.score.split(':')[1] || '';
+            const drawTeam = (teamName, id) => {
+                const players = m.all_players.filter(p => p.team === teamName).sort((a,b) => b.acs - a.acs);
+                document.getElementById(id).innerHTML = players.map(p => `
+                    <tr class="border-b border-gray-800 hover:bg-white hover:bg-opacity-5">
+                        <td class="p-2"><img src="${p.agent_img}" class="w-8 h-8 rounded bg-gray-900"></td>
+                        <td class="py-2">
+                            <div class="flex items-center gap-2">
+                                <img src="${p.rank_img}" class="w-4 h-4" onerror="this.style.display='none'">
+                                <a href="/?name=${encodeURIComponent(p.name)}&tag=${encodeURIComponent(p.tag)}" class="player-link font-bold text-sm">
+                                    ${p.name} <span class="text-gray-600 text-[10px]">#${p.tag}</span>
+                                </a>
+                            </div>
+                        </td>
+                        <td class="text-yellow-500 font-black val-font">${p.acs}</td>
+                        <td class="font-mono text-[10px] tracking-widest">${p.kda}</td>
+                        <td class="text-gray-400 font-bold">${p.hs_rate}</td>
+                    </tr>`).join('');
+            };
+            drawTeam('红队', 'red_body');
+            drawTeam('蓝队', 'blue_body');
+            document.getElementById('detailModal').style.display = 'flex';
+        }
+        function closeModal() { document.getElementById('detailModal').style.display = 'none'; }
+    </script>
+</body>
+</html>
